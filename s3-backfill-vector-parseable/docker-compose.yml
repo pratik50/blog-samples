@@ -1,0 +1,84 @@
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: vector-s3-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_NOTIFY_WEBHOOK_ENABLE_primary: "on"
+      MINIO_NOTIFY_WEBHOOK_ENDPOINT_primary: http://bridge:8080/minio-event
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - pipeline
+
+  localstack:
+    image: localstack/localstack:3.8.1
+    container_name: vector-s3-localstack
+    environment:
+      SERVICES: sqs,s3
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack-data:/var/lib/localstack
+    networks:
+      - pipeline
+
+  vector:
+    image: timberio/vector:latest-alpine
+    container_name: vector-s3-vector
+    command: ["--config", "/etc/vector/vector.toml"]
+    profiles:
+      - pipeline
+    depends_on:
+      - minio
+      - localstack
+    environment:
+      VECTOR_LOG: info
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      SQS_QUEUE_NAME: ${SQS_QUEUE_NAME:-s3-events}
+      PARSEABLE_URL: ${PARSEABLE_URL:-http://host.docker.internal:8000}
+      PARSEABLE_STREAM: ${PARSEABLE_STREAM:-s3_import}
+      PARSEABLE_USER: ${PARSEABLE_USER:-admin}
+      PARSEABLE_PASSWORD: ${PARSEABLE_PASSWORD:-admin}
+    volumes:
+      - ./vector.toml:/etc/vector/vector.toml:ro
+    networks:
+      - pipeline
+
+  bridge:
+    build:
+      context: ./bridge
+    container_name: vector-s3-bridge
+    profiles:
+      - pipeline
+    depends_on:
+      - localstack
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      SQS_QUEUE_NAME: ${SQS_QUEUE_NAME:-s3-events}
+      LOCALSTACK_ENDPOINT: http://localstack:4566
+    ports:
+      - "8080:8080"
+    networks:
+      - pipeline
+
+volumes:
+  minio-data:
+  localstack-data:
+
+networks:
+  pipeline:
+    name: vector-s3-pipeline

@@ -1,0 +1,55 @@
+[sources.raw_s3_logs]
+type = "aws_s3"
+endpoint = "http://localstack:4566"
+force_path_style = true
+region = "${AWS_REGION}"
+compression = "auto"
+
+[sources.raw_s3_logs.auth]
+access_key_id = "${MINIO_ROOT_USER}"
+secret_access_key = "${MINIO_ROOT_PASSWORD}"
+
+[sources.raw_s3_logs.sqs]
+queue_url = "http://localstack:4566/000000000000/${SQS_QUEUE_NAME}"
+poll_secs = 5
+delete_message = true
+
+[sources.raw_s3_logs.framing]
+method = "newline_delimited"
+
+[sources.raw_s3_logs.decoding]
+codec = "json"
+
+[sinks.parseable]
+type = "http"
+inputs = ["raw_s3_logs"]
+uri = "${PARSEABLE_URL}/api/v1/logstream/${PARSEABLE_STREAM}"
+method = "post"
+compression = "none"
+payload_prefix = "["
+payload_suffix = "]"
+
+[sinks.parseable.auth]
+strategy = "basic"
+user = "${PARSEABLE_USER}"
+password = "${PARSEABLE_PASSWORD}"
+
+[sinks.parseable.encoding]
+codec = "json"
+
+[sinks.parseable.framing]
+method = "character_delimited"
+
+[sinks.parseable.framing.character_delimited]
+delimiter = ","
+
+[sinks.parseable.batch]
+max_events = 100
+timeout_secs = 1
+
+[sinks.parseable.request]
+timeout_secs = 60
+retry_attempts = 5
+
+[sinks.parseable.request.headers]
+Content-Type = "application/json"
